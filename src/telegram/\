@@ -1,0 +1,94 @@
+use crate::db::crud;
+use crate::models::brand::Brand;
+use teloxide::{dispatching::dialogue::InMemStorage, prelude::*, types::InputFile};
+use url::Url;
+type MyDialogue = Dialogue<State, InMemStorage<State>>;
+
+#[derive(Clone, Default)]
+pub enum State {
+    #[default]
+    Start,
+    ReceiveBrand,
+}
+
+pub async fn init_bot() {
+    let bot = Bot::new("7527659996:AAGVKlDLi13Ml2cd-91oBOPFNJcElh2HI7Y");
+
+    Dispatcher::builder(
+        bot,
+        Update::filter_message()
+            .enter_dialogue::<Message, InMemStorage<State>, State>()
+            .branch(dptree::case![State::Start].endpoint(start))
+            .branch(dptree::case![State::ReceiveBrand].endpoint(receive_brand)),
+    )
+    .dependencies(dptree::deps![InMemStorage::<State>::new()])
+    .enable_ctrlc_handler()
+    .build()
+    .dispatch()
+    .await;
+}
+
+async fn start(
+    bot: Bot,
+    dialogue: MyDialogue,
+    msg: Message,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    bot.send_message(msg.chat.id, "Hello there, what brand do you want to check?")
+        .await?;
+    dialogue.update(State::ReceiveBrand).await?;
+
+    Ok(())
+}
+
+async fn receive_brand(
+    bot: Bot,
+    dialogue: MyDialogue,
+    msg: Message,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut brand_name: String = String::new();
+    match msg.text() {
+        Some(text) => brand_name = text.to_string(),
+        _ => {}
+    }
+
+    let brands_res = tokio::task::spawn(async move {
+	crud::get_brand(&brand_name).await;
+    }).await.unwrap();
+    if brands_res.is_err() {
+        let err_msg: String = brands_res.err().unwrap().to_string();
+
+        bot.send_message(msg.chat.id, err_msg).await?;
+    } else {
+        let brands: Vec<Brand> = brands_res.unwrap();
+        let results_num = brands.len();
+
+        if results_num > 0 {
+            let first_message: String = results_num.to_string() + &String::from(" results found:");
+            bot.send_message(msg.chat.id, first_message).await?;
+
+            for brand in brands.iter() {
+                let brand_image: String = brand.brand_image.clone();
+                let image_url: Url = Url::parse(&brand_image)?;
+                bot.send_photo(msg.chat.id, InputFile::url(image_url))
+                    .await?;
+
+                let brand_name: String = brand.brand_name.clone();
+                let proof: String = brand.proof.clone();
+                let source: String = brand.source.clone();
+
+                let message: String = brand_name
+                    + &String::from("\n\n")
+                    + &proof
+                    + &String::from("\n\n")
+                    + &String::from("Source: ")
+                    + &source;
+
+                bot.send_message(msg.chat.id, message).await?;
+            }
+        }
+    }
+
+    dialogue.update(State::ReceiveBrand).await?;
+
+    Ok(())
+}
