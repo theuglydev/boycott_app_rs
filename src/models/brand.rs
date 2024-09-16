@@ -7,6 +7,3 @@ pub struct Brand {
     pub proof: String,
     pub source: String,
 }
-
-unsafe impl Send for Brand {}
-unsafe impl Sync for Brand {}

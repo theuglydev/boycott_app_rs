@@ -8,10 +8,15 @@ use actix_web::{web, App, HttpServer};
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
-        App::new().route(
-            "/scrapebrands",
-            web::get().to(handlers::brands_handlers::scrape_brands_handler),
-        )
+        App::new()
+            .route(
+                "/scrapebrands",
+                web::get().to(handlers::brands_handlers::scrape_brands_handler),
+            )
+            .route(
+                "fetchbrands",
+                web::get().to(handlers::query_handlers::fetch_brands_handler),
+            )
     })
     .bind("127.0.0.1:8080")?
     .run()
